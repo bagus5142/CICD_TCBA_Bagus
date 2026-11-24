@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'NAMA-FUNCTION-APP-ANDA'
+  AZURE_FUNCTIONAPP_NAME: 'hotel-review'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: Run Unit Tests (Pytest)
-        run: pytest
+        run: python -m pytest
 
   continuous-deployment:
     name: CD - Deploy to Azure Function App
