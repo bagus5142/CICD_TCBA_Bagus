@@ -8,21 +8,35 @@ from azure.storage.blob import BlobServiceClient
 
 app = func.FunctionApp()
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://upload-data-hotel.duckdns.org")
+API_BASE_URL = os.getenv(
+    "API_BASE_URL", "https://upload-data-hotel.duckdns.org"
+).rstrip("/")
+API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN", "").strip()
 STORAGE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = "hotel-reviews-ingested"
 
 
-def run_ingestion_pipeline() -> dict:
-    """Mengambil daftar file dari FastAPI MinIO VPS dan menyimpannya ke Azure Blob Storage."""
-    if not STORAGE_CONN_STR:
-        raise ValueError("AZURE_STORAGE_CONNECTION_STRING belum diatur di Environment Variables.")
+def get_auth_headers() -> dict:
+    if not API_AUTH_TOKEN:
+        return {}
+    return {
+        "Authorization": f"Bearer {API_AUTH_TOKEN}",
+        "X-API-Key": API_AUTH_TOKEN,
+    }
 
-    response = requests.get(f"{API_BASE_URL}/api/uploads", timeout=30)
+
+def run_ingestion_pipeline() -> dict:
+    """Tarik dataset dari FastAPI MinIO VPS ke Azure Blob Storage."""
+    if not STORAGE_CONN_STR:
+        raise ValueError("AZURE_STORAGE_CONNECTION_STRING belum diatur.")
+
+    headers = get_auth_headers()
+    response = requests.get(
+        f"{API_BASE_URL}/api/uploads", headers=headers, timeout=30
+    )
     response.raise_for_status()
     payload = response.json()
 
-    # Menangani respons baik berupa list langsung maupun dict wrapper
     if isinstance(payload, list):
         uploads = payload
     elif isinstance(payload, dict):
@@ -41,13 +55,17 @@ def run_ingestion_pipeline() -> dict:
     if not container_client.exists():
         container_client.create_container()
 
-    batch_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    batch_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     ingested_files = []
 
     for idx, item in enumerate(uploads):
         if not isinstance(item, dict):
             continue
-        upload_id = item.get("id") or item.get("upload_id") or item.get("file_id")
+        upload_id = (
+            item.get("id")
+            or item.get("upload_id")
+            or item.get("file_id")
+        )
         filename = (
             item.get("filename")
             or item.get("file_name")
@@ -56,13 +74,17 @@ def run_ingestion_pipeline() -> dict:
         )
 
         if upload_id is None:
-            raise KeyError(f"Key ID tidak ditemukan pada item JSON: {list(item.keys())}")
+            raise KeyError(
+                f"Key ID tidak ditemukan di JSON: {list(item.keys())}"
+            )
 
         download_url = f"{API_BASE_URL}/api/uploads/{upload_id}/download"
-        file_resp = requests.get(download_url, timeout=60)
+        file_resp = requests.get(
+            download_url, headers=headers, timeout=60
+        )
         file_resp.raise_for_status()
 
-        blob_path = f"batch_{batch_timestamp}/{filename}"
+        blob_path = f"batch_{batch_ts}/{filename}"
         blob_client = container_client.get_blob_client(blob_path)
         blob_client.upload_blob(file_resp.content, overwrite=True)
         ingested_files.append(blob_path)
@@ -74,9 +96,11 @@ def run_ingestion_pipeline() -> dict:
     }
 
 
-@app.timer_trigger(schedule="0 0 */6 * * *", arg_name="myTimer", run_on_startup=False)
+@app.timer_trigger(
+    schedule="0 0 */6 * * *", arg_name="myTimer", run_on_startup=False
+)
 def hotel_reviews_scheduler(myTimer: func.TimerRequest) -> None:
-    logging.info("Memulai pipeline ingestion data Hotel Reviews (Jadwal 6 Jam)...")
+    logging.info("Memulai pipeline ingestion data Hotel Reviews...")
     result = run_ingestion_pipeline()
     logging.info(f"Ingestion selesai: {result}")
 
