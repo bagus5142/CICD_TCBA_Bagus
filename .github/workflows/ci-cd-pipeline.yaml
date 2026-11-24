@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'NAMA-FUNCTION-APP-ANDA'
+  AZURE_FUNCTIONAPP_NAME: 'hotel-review'
   PYTHON_VERSION: '3.11'
 
 jobs:
