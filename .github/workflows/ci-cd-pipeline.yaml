@@ -2,26 +2,27 @@ name: CI-CD Hotel Reviews Ingestion Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 */6 * * *' # Scheduler setiap 6 jam pada workflow YAML
+    branches:
+      - main
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'hotel-review-ea'
+  AZURE_FUNCTIONAPP_NAME: cicd-hotel-bagus
   PYTHON_VERSION: '3.11'
 
 jobs:
   continuous-integration:
     name: CI - Lint & Unit Test
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -31,33 +32,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Code Linting (Flake8)
+      - name: Code Linting
         run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Run Unit Tests (Pytest)
+      - name: Run Unit Tests
         run: python -m pytest
 
   continuous-deployment:
     name: CD - Deploy to Azure Function App
     needs: continuous-integration
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Login to Azure using OIDC
+        uses: azure/login@v3
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Dependencies into Target Package
-        run: |
-          pip install --target="./.python_packages/lib/site-packages" -r requirements.txt
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Function App
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: '.'
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          remote-build: true
