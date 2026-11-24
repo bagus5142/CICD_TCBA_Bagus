@@ -1,6 +1,6 @@
 azure-functions
 azure-storage-blob
 requests
-pandas
+cryptography==42.0.8
 pytest
 flake8
